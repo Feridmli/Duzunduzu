@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KamoAzmiu NFT Marketplace 🐻</title>
+
+<!-- Ethers kitabxanası -->
+<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+</head>
+
+<body>
+<div class="main-card">
+  <div class="center-card">
+    <h1>KamoAzmiu NFT Marketplace 🐻</h1>
+    <button class="wallet-btn" id="connectBtn">Cüzdanı qoş</button>
+    <button class="wallet-btn" id="disconnectBtn" style="display:none;">Bağlantını kəs</button>
+    <span id="addr" style="margin-left:10px; opacity:0.7;"></span>
+  </div>
+
+  <section class="marketplace" id="marketplace"></section>
+  <div class="pagination" id="pagination"></div>
+</div>
+
+<script type="module">
+document.addEventListener('DOMContentLoaded', async () => {
+  import('./SeaportUtils.js').then(({ Seaport, fulfillOrder }) => {
+
+    // Backend və Proxy ünvanları
+    const BACKEND_URL = "https://duzgunduz.onrender.com";
+    const PROXY_ADDRESS = "0xProxyAddress"; // Sənin Seaport proxy ünvanın
+
+    let provider, signer, userAddress;
+    let seaport;
+    let nftData = [], currentPage = 1;
+    const NFTS_PER_PAGE = 12;
+
+    // Elementlər
+    const connectBtn = document.getElementById("connectBtn");
+    const disconnectBtn = document.getElementById("disconnectBtn");
+    const addrSpan = document.getElementById("addr");
+    const marketplaceEl = document.getElementById('marketplace');
+    const paginationEl = document.getElementById('pagination');
+
+    // Cüzdan qoş
+    connectBtn.onclick = async () => {
+      try {
+        if (!window.ethereum) return alert("Metamask və ya uyğun cüzdan tapılmadı!");
+        
+        provider = new ethers.providers.Web3Provider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        signer = provider.getSigner();
+        userAddress = await signer.getAddress();
+
+        // Seaport obyekti proxy ilə
+        seaport = new Seaport(signer, { contractAddress: PROXY_ADDRESS });
+
+        connectBtn.style.display = "none";
+        disconnectBtn.style.display = "inline-block";
+        addrSpan.textContent = userAddress.slice(0,6) + "..." + userAddress.slice(-4);
+
+        await loadOrders();
+      } catch(e) {
+        console.error(e);
+        alert("Cüzdan qoşmaq mümkün olmadı!");
+      }
+    };
+
+    // Cüzdan ayır
+    disconnectBtn.onclick = () => {
+      provider = null;
+      signer = null;
+      seaport = null;
+      userAddress = null;
+      connectBtn.style.display = "inline-block";
+      disconnectBtn.style.display = "none";
+      addrSpan.textContent = "";
+      marketplaceEl.innerHTML = "";
+      paginationEl.innerHTML = "";
+    };
+
+    // Backend-dən NFT-ləri yüklə
+    async function loadOrders() {
+      try {
+        const resp = await fetch(`${BACKEND_URL}/orders/${userAddress}`);
+        const data = await resp.json();
+        if (!data.success || !data.orders.length) {
+          marketplaceEl.innerHTML = "<p style='text-align:center;opacity:0.7;'>NFT tapılmadı</p>";
+          return;
+        }
+        nftData = data.orders;
+        currentPage = 1;
+        renderMarketplace();
+      } catch(e) {
+        console.error(e);
+        alert("NFT-ləri yükləmək mümkün olmadı!");
+      }
+    }
+
+    // NFT-ləri göstər
+    function renderMarketplace() {
+      marketplaceEl.innerHTML = '';
+      const start = (currentPage -1) * NFTS_PER_PAGE;
+      const end = Math.min(start + NFTS_PER_PAGE, nftData.length);
+
+      for(let i=start;i<end;i++){
+        const data = nftData[i];
+        const card = document.createElement('div');
+        card.className = 'nft-card';
+        card.innerHTML = `
+          <img src="${data.metadata?.image || 'https://via.placeholder.com/100'}" alt="NFT">
+          <h4>${data.metadata?.name || 'NFT #' + data.tokenId}</h4>
+          <p>Qiymət: ${data.price || 'N/A'} ETH</p>
+          <button id="buyBtn${data.tokenId}">Al</button>
+        `;
+        marketplaceEl.appendChild(card);
+        document.getElementById(`buyBtn${data.tokenId}`).onclick = () => buyNFT(data);
+      }
+
+      renderPagination();
+    }
+
+    // Pagination
+    function renderPagination() {
+      paginationEl.innerHTML = '';
+      const totalPages = Math.ceil(nftData.length / NFTS_PER_PAGE);
+
+      const prevBtn = document.createElement('button');
+      prevBtn.textContent = '< Əvvəlki';
+      prevBtn.disabled = currentPage === 1;
+      prevBtn.onclick = () => { currentPage--; renderMarketplace(); };
+      paginationEl.appendChild(prevBtn);
+
+      const pageInfo = document.createElement('span');
+      pageInfo.textContent = ` Səhifə ${currentPage} / ${totalPages} `;
+      paginationEl.appendChild(pageInfo);
+
+      const nextBtn = document.createElement('button');
+      nextBtn.textContent = 'Sonrakı >';
+      nextBtn.disabled = currentPage === totalPages;
+      nextBtn.onclick = () => { currentPage++; renderMarketplace(); };
+      paginationEl.appendChild(nextBtn);
+    }
+
+    // NFT alışı
+    async function buyNFT(order){
+      if(!signer || !seaport) return alert("Əvvəlcə cüzdanı qoş.");
+
+      try {
+        await fulfillOrder(seaport, signer, order, { recipient: order.seller || userAddress });
+        alert(`NFT #${order.tokenId} uğurla alındı ✅`);
+      } catch(e) {
+        console.error(e);
+        alert("NFT alışı zamanı xəta baş verdi!");
+      }
+    }
+
+  }).catch(e => console.error("SeaportUtils.js yüklənmədi:", e));
+});
+</script>
+
+<style>
+/* ===== Sənin əvvəldəki stil eyni qalır ===== */
+body { margin:0;font-family:'Poppins',sans-serif; background:radial-gradient(circle at top,#0c0c0c,#050505); color:#fff; display:flex; justify-content:center; align-items:center; min-height:100vh;}
+.main-card{width:95%;max-width:1200px;background:rgba(255,255,255,0.03);backdrop-filter:blur(20px);border-radius:30px;padding:40px;box-shadow:0 20px 60px rgba(255,105,0,0.5);display:flex;flex-direction:column;align-items:center;}
+.center-card{background:rgba(255,255,255,0.05);backdrop-filter:blur(15px);padding:30px 50px;border-radius:25px;text-align:center;box-shadow:0 15px 50px rgba(255,105,0,0.4);margin-bottom:30px;}
+.center-card h1{font-size:32px;margin-bottom:25px;color:#ffb347;text-shadow:0 0 15px #ff6a00;}
+.wallet-btn{background:linear-gradient(135deg,#ff6a00,#ee0979);color:#fff;padding:12px 25px;border:none;border-radius:50px;cursor:pointer;font-weight:bold;margin:10px;transition:all 0.3s ease;box-shadow:0 4px 15px rgba(238,9,121,0.5);}
+.wallet-btn:hover{transform:scale(1.1);box-shadow:0 8px 25px rgba(238,9,121,0.8);}
+.marketplace{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:20px;width:100%;margin-top:20px;}
+.nft-card{background:rgba(255,255,255,0.05);border-radius:20px;padding:15px;text-align:center;transition:transform 0.3s ease,box-shadow 0.3s ease;backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.1);}
+.nft-card:hover{transform:translateY(-10px) scale(1.05);box-shadow:0 15px 40px rgba(255,105,0,0.4);}
+.nft-card img{width:120px;height:120px;border-radius:15px;object-fit:cover;transition:transform 0.3s ease;}
+.nft-card img:hover{transform:scale(1.1) rotate(3deg);}
+.nft-card h4{margin:10px 0 5px 0;font-weight:700;color:#ffb347;}
+.nft-card p{margin:0 0 10px 0;color:#fff;opacity:0.8;}
+.nft-card button{background:linear-gradient(135deg,#ff6a00,#ee0979);padding:8px 20px;border:none;border-radius:30px;cursor:pointer;color:#fff;font-weight:bold;transition:all 0.3s ease;}
+.nft-card button:hover{transform:scale(1.1);box-shadow:0 8px 25px rgba(255,105,0,0.7);}
+.pagination{text-align:center;margin:25px 0;}
+.pagination button{background:linear-gradient(135deg,#00ccff,#0055ff);color:#fff;border:none;padding:8px 15px;margin:0 5px;border-radius:50px;cursor:pointer;font-weight:bold;transition:all 0.3s ease;}
+.pagination button:hover:not(:disabled){transform:scale(1.1);box-shadow:0 6px 20px rgba(0,204,255,0.5);}
+.pagination button:disabled{opacity:0.4;cursor:default;}
+</style>
+</body>
+</html>
