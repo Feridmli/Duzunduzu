@@ -7,6 +7,7 @@ import { nanoid } from 'nanoid';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import helmet from 'helmet';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -20,8 +21,14 @@ app.use(express.json());
 const FRONTEND_URL = process.env.FRONTEND_URL || '*';
 app.use(cors({ origin: FRONTEND_URL === '*' ? true : FRONTEND_URL }));
 
-const file = path.join(__dirname, 'db.json');
-const adapter = new JSONFile(file);
+// DB faylını yoxla, mövcud deyilsə yarat
+const dbPath = path.join(__dirname, 'db.json');
+if (!fs.existsSync(dbPath)) {
+  fs.writeFileSync(dbPath, JSON.stringify({ orders: [] }, null, 2));
+}
+
+// LowDB setup
+const adapter = new JSONFile(dbPath);
 const db = new Low(adapter);
 
 app.post('/order', async (req, res) => {
@@ -32,6 +39,8 @@ app.post('/order', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Missing parameters' });
 
     await db.read();
+    db.data ||= { orders: [] };
+
     const id = nanoid();
     const order = {
       id,
@@ -57,7 +66,9 @@ app.post('/order', async (req, res) => {
 
 app.get('/orders/:address?', async (req, res) => {
   await db.read();
-  let orders = db.data.orders || [];
+  db.data ||= { orders: [] };
+
+  let orders = db.data.orders;
   const addr = req.params.address;
   if (addr) {
     orders = orders.filter(o => o.seller && o.seller.toLowerCase() === addr.toLowerCase());
@@ -68,10 +79,7 @@ app.get('/orders/:address?', async (req, res) => {
 // Async server start
 async function startServer() {
   await db.read();
-  if (!db.data) {
-    db.data = { orders: [] };
-    await db.write();
-  }
+  db.data ||= { orders: [] }; // Default data
 
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log(`Backend ${PORT}-də işləyir`));
