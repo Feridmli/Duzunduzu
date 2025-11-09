@@ -1,4 +1,3 @@
-// server.js — KamoAzmiu Marketplace Backend (Buy-only)
 import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
@@ -9,42 +8,22 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import helmet from 'helmet';
 
-// Load environment variables
 dotenv.config();
 
-// __dirname fix for ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Initialize Express app
 const app = express();
 app.use(helmet());
 app.use(express.json());
 
-// CORS
 const FRONTEND_URL = process.env.FRONTEND_URL || '*';
 app.use(cors({ origin: FRONTEND_URL === '*' ? true : FRONTEND_URL }));
 
-// LowDB setup
 const file = path.join(__dirname, 'db.json');
 const adapter = new JSONFile(file);
 const db = new Low(adapter);
 
-// Init DB before server starts
-async function initDB() {
-  await db.read();
-
-  // Check if data exists, otherwise create default
-  if (!db.data) {
-    db.data = { orders: [] };
-    await db.write();
-  }
-}
-
-// **Top-level await** ensures DB is ready before server listens
-await initDB();
-
-// POST /order — order-u DB-də saxla
 app.post('/order', async (req, res) => {
   try {
     const { tokenId, price, nftContract, marketplaceContract, sellerAddress, seaportOrder, orderHash } = req.body;
@@ -76,17 +55,26 @@ app.post('/order', async (req, res) => {
   }
 });
 
-// GET /orders/:address? — bütün və ya user-specific order-lar
 app.get('/orders/:address?', async (req, res) => {
   await db.read();
-  const addr = req.params.address;
   let orders = db.data.orders || [];
+  const addr = req.params.address;
   if (addr) {
     orders = orders.filter(o => o.seller && o.seller.toLowerCase() === addr.toLowerCase());
   }
   res.json({ success: true, orders });
 });
 
-// Start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Backend ${PORT}-də işləyir`));
+// Async server start
+async function startServer() {
+  await db.read();
+  if (!db.data) {
+    db.data = { orders: [] };
+    await db.write();
+  }
+
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => console.log(`Backend ${PORT}-də işləyir`));
+}
+
+startServer();
